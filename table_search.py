@@ -42,7 +42,7 @@ def findCorners(img):
     return centroids, lines
 
 
-def crossCounterFilter(img, centroids, v_more=10, h_more=5, v_diff=2, h_diff=10):
+def crossCounterFilter(centroids, v_more=10, h_more=5, v_diff=2, h_diff=10):
     centroids = sorted(centroids, key=lambda x: x[0])
     vertical_counters = []
     counter = 1
@@ -74,22 +74,17 @@ def crossCounterFilter(img, centroids, v_more=10, h_more=5, v_diff=2, h_diff=10)
     new_centroids = list()
     for centroid in centroids:
         if vertical_dict[tuple(centroid)] >= v_more and horizontal_dict[tuple(centroid)] >= h_more:
-            # print(vertical_dict[tuple(centroid)], horizontal_dict[tuple(centroid)])
-            # cv2.circle(img, (int(centroid[0]), int(centroid[1])), 4, (0, 255, 255), 2)
-            # cv2.imshow('img', img)
-            # cv2.waitKey()
             new_centroids.append(centroid)
     return new_centroids
 
 
 def nmsToLineDistanceFilter(points, lines):
-    spacing = line_spacing(lines)
     points_distance = corners_min_distance_to_lines(points, lines)
     points = none_max_suppress(points, points_distance, spacing // 2)
     return points
 
 
-def line_spacing(lines):
+def line_information(lines):
     lines = lines[:, 0, :]
     lines = lines[lines[:, 3] - lines[:, 1] == 0]
     lines_x = sorted(lines[:, 3])
@@ -104,8 +99,9 @@ def line_spacing(lines):
     for i in range(1, len(clusters_lines_x)):
         spacings.append(clusters_lines_x[i] - clusters_lines_x[i - 1])
     counts = np.bincount(spacings)
-    mode = np.argmax(counts)
-    return mode
+    spacing = np.argmax(counts)
+    min_line_number = max(counts)
+    return spacing, min_line_number
 
 
 def none_max_suppress(points, points_distance, radius, distance_threshold=8):
@@ -143,7 +139,8 @@ def corners_min_distance_to_lines(points: np.ndarray, lines: np.ndarray):
     lines_k = (lines_y2 - lines_y1) / (lines_x2 - lines_x1)
     lines_k[np.isinf(lines_k)] = 1000000000000
     distance = (lines_k * (points_x - lines_x1) - (points_y - lines_y1)) / (np.sqrt(lines_k * lines_k + 1))
-    points_distance = np.min(np.abs(distance), axis=1)
+    distance = np.partition(np.abs(distance), range(2))
+    points_distance = np.mean(distance[:, :2], axis=1)
     return points_distance
 
 
@@ -154,7 +151,7 @@ if __name__ == '__main__':
     img = cv2.imread(input_Path)
     corners, lines = findCorners(img)
 
-    line_spacing(lines)
+    spacing, min_line_number = line_information(lines)
 
     for corner in corners:
         cv2.circle(img, (int(corner[0]), int(corner[1])), 8, (0, 0, 255), 3)
@@ -169,7 +166,8 @@ if __name__ == '__main__':
     for i in range(len(corners)):
         cv2.circle(img, (int(corners[i][0]), int(corners[i][1])), 6, (0, 255, 255), 3)
 
-    corners = crossCounterFilter(img, corners)
+    # corners = crossCounterFilter(img, corners, v_more=min_line_number)
+    corners = crossCounterFilter(corners)
     for i in range(len(corners)):
         cv2.circle(img, (int(corners[i][0]), int(corners[i][1])), 4, (255, 0, 0), 3)
         # cv2.circle(img, (int(corners[i][0]), int(corners[i][1])), 2, (0, 255, 0), 3)
@@ -179,6 +177,3 @@ if __name__ == '__main__':
 
     cv2.imwrite("corner_test1.png", img)
 
-    arr = np.array([1, 2, 3])
-    ccc = arr[arr < 2]
-    print(ccc)

@@ -1,15 +1,20 @@
 import cv2
+import math
+import numpy as np
 
 
 def findCorners(img):
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img = cv2.GaussianBlur(img, (3, 3), 0)
-    img = cv2.bitwise_not(img)
-    AdaptiveThreshold = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, -2)
+    img_ = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img_ = cv2.GaussianBlur(img_, (3, 3), 0)
+    img_ = cv2.bitwise_not(img_)
+    AdaptiveThreshold = cv2.adaptiveThreshold(img_, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, -2)
+
+    line_length = int(0.25 * min(img.shape[0], img.shape[1]))
+    lines = cv2.HoughLinesP(AdaptiveThreshold, 1, np.pi / 180, 60, minLineLength=line_length, maxLineGap=10)
 
     horizontal = AdaptiveThreshold.copy()
     vertical = AdaptiveThreshold.copy()
-    scale = 20
+    scale = 200
 
     horizontalSize = int(horizontal.shape[1] / scale)
     horizontalStructure = cv2.getStructuringElement(cv2.MORPH_RECT, (horizontalSize, 1))
@@ -22,30 +27,109 @@ def findCorners(img):
     vertical = cv2.dilate(vertical, verticalStructure, (-1, -1))
 
     corners_img = cv2.bitwise_and(horizontal, vertical)
-    # contours, hierarchy = cv2.findContours(horizontal + vertical, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+    # cv2.imshow("AdaptiveThreshold", AdaptiveThreshold)
+    # for line in lines:
+    #     x1, y1, x2, y2 = line[0]
+    #     cv2.line(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    # cv2.imshow("line_detect_possible", img)
     # cv2.imshow("horizontal", horizontal)
     # cv2.imshow("verticalsize", vertical)
-    # cv2.imshow("mask", mask)
-    # cv2.imshow("Net_img", Net_img)
+    # cv2.imshow("corners_img", corners_img)
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
 
-
-    output = cv2.connectedComponents(corners_img, connectivity=8, ltype=cv2.CV_32S)
-
-    return img, corners_img
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(corners_img, connectivity=8)
+    return centroids, lines
 
 
+def corners_min_distance_to_lines(points: np.ndarray, lines: np.ndarray):
+    points_x = points[:, [0]]
+    points_y = points[:, [1]]
+
+    lines = lines[:, 0, :].T
+    lines_x1 = lines[[0], :]
+    lines_y1 = lines[[1], :]
+    lines_x2 = lines[[2], :]
+    lines_y2 = lines[[3], :]
+
+    lines_k = (lines_y2 - lines_y1) / (lines_x2 - lines_x1)
+    lines_k[np.isinf(lines_k)] = 1000000000000
+    distance = (lines_k * (points_x - lines_x1) - (points_y - lines_y1)) / (np.sqrt(lines_k * lines_k + 1))
+    points_distance = np.min(np.abs(distance), axis=1)
+
+    corner_distance = dict()
+    for i, corner in enumerate(corners):
+        corner_distance[tuple(corner)] = points_distance[i]
+    return corner_distance
+
+
+def crossFilter(img, centroids, v_more=10, h_more=5, v_diff=2, h_diff=10):
+    centroids = sorted(centroids, key=lambda x: x[0])
+    vertical_counters = []
+    counter = 1
+    for i in range(1, len(centroids)):
+        if abs(centroids[i][0] - centroids[i - 1][0]) <= v_diff:
+            counter += 1
+        else:
+            vertical_counters += [counter] * counter
+            counter = 1
+    vertical_counters += [counter] * counter
+    vertical_dict = dict()
+    for i in range(len(centroids)):
+        vertical_dict[tuple(centroids[i])] = vertical_counters[i]
+
+    centroids = sorted(centroids, key=lambda x: x[1])
+    horizontal_counters = []
+    counter = 1
+    for i in range(1, len(centroids)):
+        if abs(centroids[i][1] - centroids[i - 1][1]) <= h_diff:
+            counter += 1
+        else:
+            horizontal_counters += [counter] * counter
+            counter = 1
+    horizontal_counters += [counter] * counter
+    horizontal_dict = dict()
+    for i in range(len(centroids)):
+        horizontal_dict[tuple(centroids[i])] = horizontal_counters[i]
+
+    new_centroids = list()
+    for centroid in centroids:
+        if vertical_dict[tuple(centroid)] >= v_more and horizontal_dict[tuple(centroid)] >= h_more:
+            # print(vertical_dict[tuple(centroid)], horizontal_dict[tuple(centroid)])
+            # cv2.circle(img, (int(centroid[0]), int(centroid[1])), 4, (0, 255, 255), 2)
+            # cv2.imshow('img', img)
+            # cv2.waitKey()
+            new_centroids.append(centroid)
+    return new_centroids
 
 
 if __name__ == '__main__':
-    # input_Path = '2.png'
+    input_Path = '2.jpg'
+    # input_Path = 'decolor.png'
     input_Path = 'ren.png'
-    src_img = cv2.imread(input_Path)
-    src_img, Net_img = findCorners(src_img)
+    img = cv2.imread(input_Path)
+    corners, lines = findCorners(img)
 
-    cv2.imshow("src_img", src_img)
-    cv2.imshow("Net_img", Net_img)
-    cv2.waitKey()
+    for corner in corners:
+        cv2.circle(img, (int(corner[0]), int(corner[1])), 8, (0, 0, 255), 2)
 
+        # put_str = str(int(corner[0]))
+        # # put_str = str(int(corner[1]))
+        # img = cv2.putText(img, put_str, (int(corner[0]), int(corner[1])),
+        #                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 1, )
+        # cv2.imwrite("corner_test0.png", img)
+
+    corners = corners_min_distance_to_lines(corners, lines)
+    for i in range(len(corners)):
+        cv2.circle(img, (int(corners[i][0]), int(corners[i][1])), 6, (0, 255, 255), 2)
+
+    corners = crossFilter(img, corners)
+    for i in range(len(corners)):
+        cv2.circle(img, (int(corners[i][0]), int(corners[i][1])), 4, (255, 0, 0), 2)
+        cv2.circle(img, (int(corners[i][0]), int(corners[i][1])), 2, (0, 255, 0), 2)
+        # put_str = str(int(vertical_counters[i]))
+        # img = cv2.putText(img, put_str, (int(corners[i][0]), int(corners[i][1])),
+        #                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 1, )
+
+    cv2.imwrite("corner_test1.png", img)

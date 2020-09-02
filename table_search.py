@@ -2,9 +2,20 @@ import cv2
 import numpy as np
 
 
+def find_table_corners(img):
+    corners, lines, h_lines, v_lines = findCorners(img)
+    h_num = horizontal_line_cluster(h_lines, 5)
+    v_num = vertical_line_cluster(v_lines, 5)
+    clusters_rows_y, clusters_columns_x = row_column_clustering(lines)
+    spacing, min_line_number = row_num_spacing(clusters_rows_y)
+    corners = nmsToLineDistanceFilter(corners, lines, spacing)
+    corners = crossCounterFilter(corners)
+    return corners
+
+
 def findCorners(img):
-    img_ = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img_ = cv2.GaussianBlur(img_, (3, 3), 0)
+    # img_ = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img_ = cv2.GaussianBlur(img, (3, 3), 0)
     img_ = cv2.bitwise_not(img_)
     AdaptiveThreshold = cv2.adaptiveThreshold(img_, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, -2)
 
@@ -19,33 +30,69 @@ def findCorners(img):
     horizontalStructure = cv2.getStructuringElement(cv2.MORPH_RECT, (horizontalSize, 1))
     horizontal = cv2.erode(horizontal, horizontalStructure)
     horizontal = cv2.dilate(horizontal, horizontalStructure)
+    horizontal_lines = cv2.HoughLinesP(horizontal, 1, np.pi / 180, 60, minLineLength=line_length, maxLineGap=10)
 
     verticalsize = int(vertical.shape[1] / scale)
     verticalStructure = cv2.getStructuringElement(cv2.MORPH_RECT, (1, verticalsize))
     vertical = cv2.erode(vertical, verticalStructure, (-1, -1))
     vertical = cv2.dilate(vertical, verticalStructure, (-1, -1))
+    vertical_lines = cv2.HoughLinesP(vertical, 1, np.pi / 180, 60, minLineLength=line_length, maxLineGap=10)
 
     corners_img = cv2.bitwise_and(horizontal, vertical)
 
     # cv2.imshow("AdaptiveThreshold", AdaptiveThreshold)
+    # img_line, img_horizontal, img_vertical = img.copy(), img.copy(), img.copy()
     # for line in lines:
     #     x1, y1, x2, y2 = line[0]
-    #     cv2.line(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
-    # cv2.imshow("line_detect_possible", img)
+    #     cv2.line(img_line, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    # for line in horizontal_lines:
+    #     x1, y1, x2, y2 = line[0]
+    #     cv2.line(img_horizontal, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    # for line in vertical_lines:
+    #     x1, y1, x2, y2 = line[0]
+    #     cv2.line(img_vertical, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    # cv2.imshow("line_detect_possible", img_line)
     # cv2.imshow("horizontal", horizontal)
+    # cv2.imshow("horizontal_line_detect_possible", img_horizontal)
     # cv2.imshow("verticalsize", vertical)
+    # cv2.imshow("vertical_line_detect_possible", img_vertical)
     # cv2.imshow("corners_img", corners_img)
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
 
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(corners_img, connectivity=8)
-    return centroids, lines
+    return centroids, lines, horizontal_lines, vertical_lines
 
 
-def nmsToLineDistanceFilter(points, lines):
+def nmsToLineDistanceFilter(points, lines, spacing):
     points_distance = corners_min_distance_to_lines(points, lines)
     points = none_max_suppress(points, points_distance, spacing // 2)
     return points
+
+
+def horizontal_line_cluster(lines, distance_threshold=5):
+    t12s = np.concatenate((lines[:, 0, [1]], lines[:, 0, [3]]), axis=1)
+    return scan_cluster(t12s, distance_threshold)
+
+
+def vertical_line_cluster(lines, distance_threshold=5):
+    t12s = np.concatenate((lines[:, 0, [0]], lines[:, 0, [2]]), axis=1)
+    return scan_cluster(t12s, distance_threshold)
+
+
+def scan_cluster(t12s, gap_fill):
+    t12s = set([(y1, y2) for y1, y2 in t12s])
+    start_points = [(y1, -1) for y1, y2 in t12s]
+    end_points = [(y2, 1) for y1, y2 in t12s]
+    y_s = sorted(start_points + end_points)
+
+    y0, line_counter, cluster_counter = 0, 0, -1
+    for y, flag in y_s:
+        if line_counter <= 0 and y - y0 > gap_fill:
+            cluster_counter += 1
+        line_counter -= flag
+        y0 = y
+    return cluster_counter
 
 
 def row_column_clustering(lines):
@@ -157,6 +204,10 @@ def crossCounterFilter(centroids, v_more=10, h_more=5, v_diff=2, h_diff=10):
     return np.array(new_centroids)
 
 
+def arrange_standard_rectangle_centers(centroids):
+    pass
+
+
 def twoClosetVerticalHorizontalFilter(points):  # TODO
     points_x = points[:, [0]]
     points_y = points[:, [1]]
@@ -170,12 +221,13 @@ def twoClosetVerticalHorizontalFilter(points):  # TODO
 
 
 if __name__ == '__main__':
-    input_path = '2.jpg'
+    input_path = 'input_images/2.jpg'
     # input_path = 'decolor.png'
-    input_path = 'ren.png'
+    # input_path = 'ren.png'
     print("input_path : ", input_path)
     img = cv2.imread(input_path)
-    corners, lines = findCorners(img)
+    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    corners, lines, h_lines, v_lines = findCorners(gray_img)
     print("find lines : ", len(corners))
 
     clusters_rows_y, clusters_columns_x = row_column_clustering(lines)
@@ -192,7 +244,7 @@ if __name__ == '__main__':
         #                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 1, )
         # cv2.imwrite("corner_test0.png", img)
 
-    corners = nmsToLineDistanceFilter(corners, lines)
+    corners = nmsToLineDistanceFilter(corners, lines, 14)
     print("nmsToLineDistanceFilter result lines: ", len(corners))
     for i in range(len(corners)):
         cv2.circle(img, (int(corners[i][0]), int(corners[i][1])), 6, (0, 255, 255), 3)

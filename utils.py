@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 
 
@@ -21,7 +22,7 @@ def remove_isolated_pixels(image):
     new_image = image.copy()
 
     for label in range(num_stats):
-        if stats[label,cv2.CC_STAT_AREA] == 1:
+        if stats[label, cv2.CC_STAT_AREA] == 1:
             new_image[labels == label] = 0
 
     return new_image
@@ -41,8 +42,6 @@ def remove_debris(img, threshold=1000):
 
 
 if __name__ == '__main__':
-    import cv2
-
     img = cv2.imread('ren.png')
 
     decolored = decolor(img)

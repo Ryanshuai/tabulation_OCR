@@ -1,10 +1,14 @@
 # encoding:utf8
 
 import sys
+import cv2
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
+
+from utils import decolor
+from table_search import find_table_corners
 
 
 class Main(QWidget):
@@ -20,7 +24,12 @@ class ImageWithMouseControl(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
-        self.img = QPixmap('./ren.png')
+        img = cv2.imread('./ren.png')
+        # img = decolor(img)
+        # img, corners = find_table_corners(img)
+
+        height, width, c = img.shape
+        self.img = QImage(img.data, width, height, width*3, QImage.Format_RGB888)
         self.scaled_img = self.img.scaled(self.size())
         self.point = QPoint(0, 0)
         self.setGeometry(0, 0, self.img.width(), self.img.height())

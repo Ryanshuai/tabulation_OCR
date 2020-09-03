@@ -4,12 +4,17 @@ import numpy as np
 
 def find_table_corners(img):
     corners, lines, h_lines, v_lines = findCorners(img)
-    h_num = horizontal_line_cluster(h_lines, 5)
-    v_num = vertical_line_cluster(v_lines, 5)
     clusters_rows_y, clusters_columns_x = row_column_clustering(lines)
     spacing, min_line_number = row_num_spacing(clusters_rows_y)
+
+    h_num, h_centers = horizontal_line_cluster(h_lines, spacing // 2)
+    v_num, v_centers = vertical_line_cluster(v_lines, spacing // 2)
+
     corners = nmsToLineDistanceFilter(corners, lines, spacing)
     corners = crossCounterFilter(corners)
+
+    arrange_standard_rectangle_centers(corners)
+
     return corners
 
 
@@ -84,15 +89,22 @@ def scan_cluster(t12s, gap_fill):
     t12s = set([(y1, y2) for y1, y2 in t12s])
     start_points = [(y1, -1) for y1, y2 in t12s]
     end_points = [(y2, 1) for y1, y2 in t12s]
-    y_s = sorted(start_points + end_points)
+    t_s = sorted(start_points + end_points)
 
-    y0, line_counter, cluster_counter = 0, 0, -1
-    for y, flag in y_s:
-        if line_counter <= 0 and y - y0 > gap_fill:
+    cluster_centers = []
+    t_in_one_cluster = []
+    t0, t_counter, cluster_counter = 0, 0, 0
+    for t, flag in t_s:
+        if t_counter <= 0 and t - t0 > gap_fill:
             cluster_counter += 1
-        line_counter -= flag
-        y0 = y
-    return cluster_counter
+            if t_in_one_cluster:
+                cluster_centers.append(sum(t_in_one_cluster) // len(t_in_one_cluster))
+                t_in_one_cluster = []
+        t_in_one_cluster.append(t)
+        t_counter -= flag
+        t0 = t
+    cluster_centers.append(sum(t_in_one_cluster) // len(t_in_one_cluster))
+    return cluster_counter, cluster_centers
 
 
 def row_column_clustering(lines):
@@ -204,7 +216,7 @@ def crossCounterFilter(centroids, v_more=10, h_more=5, v_diff=2, h_diff=10):
     return np.array(new_centroids)
 
 
-def arrange_standard_rectangle_centers(centroids):
+def arrange_standard_rectangle_centers(centroids, ):
     pass
 
 
